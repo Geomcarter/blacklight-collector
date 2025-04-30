@@ -3,13 +3,16 @@ import { CollectorOptions, collect } from './src';
 import { join } from 'path';
 
 (async () => {
-    const URL = process.argv.length > 2 ? process.argv[2] : 'example.com';
+    const URL = process.argv.length > 2 ? process.argv[2] : 'geonetric.com';
     const EMULATE_DEVICE = 'iPhone 13 Mini';
 
     const config: CollectorOptions = {
-        numPages: 1,
+        numPages: 1000,
         headless: false,
+        saveScreenshots: false,
         emulateDevice: KnownDevices[EMULATE_DEVICE],
+        clearCache: false,
+        rejectCookies: false,
         // Uncomment to run with desktop/laptop browser
         // emulateDevice: {
         //     viewport: {height: 1440, width: 800},

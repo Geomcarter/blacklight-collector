@@ -30,6 +30,7 @@ const DEFAULT_OPTIONS = {
     clearCache: true,
     quiet: true,
     headless: true,
+    rejectCookies: true,
     defaultTimeout: 35000,
     numPages: 3,
     defaultWaitUntil: 'networkidle2' as PuppeteerLifeCycleEvent,
@@ -79,6 +80,7 @@ export const collect = async (inUrl: string, args: CollectorOptions) => {
             headers: args.headers,
             extraChromiumArgs: args.extraChromiumArgs,
             extraPuppeteerOptions: args.extraPuppeteerOptions,
+            rejectCookies: args.rejectCookies
         },
         browser: null,
         script: {
@@ -189,6 +191,43 @@ export const collect = async (inUrl: string, args: CollectorOptions) => {
             };
         }
 
+        // Function to handle cookie consent banners
+        const handleCookieConsent = async (page: Page) => {
+            try {
+                // Check if the cookie consent container is visible
+                const isCookieConsentVisible = await page.evaluate(() => {
+                    const container = document.querySelector('.cky-consent-container');
+                    return container && getComputedStyle(container).display !== 'none';
+                });
+                
+                if (isCookieConsentVisible) {
+                    if(args.rejectCookies) {
+                        logger.info('Cookie consent banner detected, attempting to click reject button');
+                        await page.evaluate(() => {
+                            const rejectButton = document.querySelector('.cky-btn-reject');
+                            if (rejectButton) {
+                                (rejectButton as HTMLElement).click();
+                            }
+                        });
+                    }
+                    else{
+                        logger.info('Cookie consent banner detected, attempting to click accept button');
+                        await page.evaluate(() => {
+                            const acceptButton = document.querySelector('.cky-btn-accept');
+                            if (acceptButton) {
+                                (acceptButton as HTMLElement).click();
+                            }
+                        });
+                    }
+                    // Wait a moment for the banner to disappear
+                    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
+
+                }
+            } catch (error) {
+                logger.warn(`Error handling cookie consent: ${error.message}`);
+            }
+        };
+
         // Function to navigate to a page with a timeout guard
         const navigateWithTimeout = async (page: Page, url: string, timeout: number, waitUntil: PuppeteerLifeCycleEvent) => {
             try {
@@ -211,6 +250,10 @@ export const collect = async (inUrl: string, args: CollectorOptions) => {
                     waitUntil: 'domcontentloaded' as PuppeteerLifeCycleEvent
                 });
             }
+            
+            // Handle cookie consent banner after page loads
+            await handleCookieConsent(page);
+            
             await savePageContent(pageIndex, args.outDir, page, args.saveScreenshots);
         };
 

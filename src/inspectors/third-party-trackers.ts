@@ -1,6 +1,4 @@
 import { fromPuppeteerDetails, PuppeteerBlocker } from '@cliqz/adblocker-puppeteer';
-import fs from 'fs';
-import path from 'path';
 import { Page } from 'puppeteer';
 import { TrackingRequestEvent } from '../types';
 
@@ -15,16 +13,49 @@ const blockerOptions = {
     loadCosmeticFilters: false // We're only interested in network filters
 };
 
-const blockers = {
-    'easyprivacy.txt': PuppeteerBlocker.parse(fs.readFileSync(path.join(__dirname, '../../data/blocklists/easyprivacy.txt'), 'utf8'), blockerOptions),
-    'easylist.txt': PuppeteerBlocker.parse(fs.readFileSync(path.join(__dirname, '../../data/blocklists/easylist.txt'), 'utf8'), blockerOptions)
+let blockers: Record<string, PuppeteerBlocker> | null = null;
+let blockersInitPromise: Promise<Record<string, PuppeteerBlocker>> | null = null;
+
+const initializeBlockers = async (): Promise<Record<string, PuppeteerBlocker>> => {
+    if (blockersInitPromise) {
+        return blockersInitPromise;
+    }
+
+    blockersInitPromise = (async () => {
+        const fetchBlocklist = async (url: string) => {
+            const response = await fetch(url);
+            return response.text();
+        };
+
+        const result = {
+            'easyprivacy.txt': await PuppeteerBlocker.parse(
+                await fetchBlocklist('https://easylist.to/easylist/easyprivacy.txt'),
+                blockerOptions
+            ),
+            'easylist.txt': await PuppeteerBlocker.parse(
+                await fetchBlocklist('https://easylist.to/easylist/easylist.txt'),
+                blockerOptions
+            )
+        };
+
+        blockers = result;
+        return result;
+    })();
+
+    return blockersInitPromise;
 };
+
+// Start initializing blockers when the module is loaded
+initializeBlockers().catch(err => console.error('Failed to initialize blockers:', err));
 
 export const setUpThirdPartyTrackersInspector = async (
     page: Page,
     eventDataHandler: (event: TrackingRequestEvent) => void,
     enableAdBlock = false
 ) => {
+    // Ensure blockers are initialized before proceeding
+    const loadedBlockers = blockers || await initializeBlockers();
+    
     if (enableAdBlock) {
         await page.setRequestInterception(true);
     }
@@ -32,7 +63,7 @@ export const setUpThirdPartyTrackersInspector = async (
     page.on('request', async request => {
         let isBlocked = false;
 
-        for (const [listName, blocker] of Object.entries(blockers)) {
+        for (const [listName, blocker] of Object.entries(loadedBlockers)) {
             const { match, filter } = blocker.match(fromPuppeteerDetails(request));
 
             if (!match) {
